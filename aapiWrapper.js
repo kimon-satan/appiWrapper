@@ -5,7 +5,6 @@ function aapiWrapper(){
     this.context = 0;
     this.initialised = true;
     this.sampleObjs = {};
-    this.crossfades = {};
 
 }
 
@@ -17,8 +16,6 @@ aapiWrapper.prototype.init = function(){
     window.AudioContext = window.AudioContext || window.webkitAudioContext;
     audio.context = new window.AudioContext();
     this.initialised = false;
-    this.calcXFades();
-
 
 
     return true;
@@ -70,21 +67,23 @@ aapiWrapper.prototype.loadSounds = function(files){
 
 }
 
-aapiWrapper.prototype.startLooping = function(n){ //n might ultimately be a key
+aapiWrapper.prototype.startLooping = function(n, amp, fadeIn){ //n might ultimately be a key
 
   var sample = this.sampleObjs[n];
+  sample.amp = amp;
+  sample.crossfades = this.calcXFades(amp);
 
   if(!sample.isPlaying){
 
     sample.isPlaying = true;
 
-    this.loopPlay(sample);
+    this.loopPlay(sample, fadeIn);
 
     sample.loopThread = window.setInterval(function(){
 
       //console.log(audio.context.currentTime + " :: "  + audio.sampleObjs[n].loopTime);
       if(this.context.currentTime > sample.loopTime){
-        this.loopPlay(sample);
+        this.loopPlay(sample, -1);
       }
 
     }.bind(this),50);
@@ -93,7 +92,7 @@ aapiWrapper.prototype.startLooping = function(n){ //n might ultimately be a key
 
 }
 
-aapiWrapper.prototype.stopLooping = function(n){
+aapiWrapper.prototype.stopLooping = function(n, fadeOut){
 
 	var sample = this.sampleObjs[n];
 
@@ -105,7 +104,7 @@ aapiWrapper.prototype.stopLooping = function(n){
 }
 
 
-aapiWrapper.prototype.loopPlay = function(sample){
+aapiWrapper.prototype.loopPlay = function(sample, fadeIn){
 
     var ct = this.context.currentTime;
 
@@ -119,11 +118,18 @@ aapiWrapper.prototype.loopPlay = function(sample){
     sample.gainNode.connect(this.context.destination);
 
     //calc next loop point
-    sample.loopTime = this.context.currentTime + sample.buffer.duration - 1;
+    sample.loopTime = ct + sample.buffer.duration - 1;
 
     //handle fades
-    sample.gainNode.gain.setValueCurveAtTime(this.crossfades.xIn, ct, 1);
-    sample.gainNode.gain.setValueCurveAtTime(this.crossfades.xOut, ct + sample.buffer.duration - 1, 1);
+    if(fadeIn > 0){
+      sample.gainNode.gain.linearRampToValueAtTime(0, ct);
+      sample.gainNode.gain.linearRampToValueAtTime(sample.amp, ct + fadeIn);
+    }else{
+      sample.gainNode.gain.setValueCurveAtTime(sample.crossfades.xIn, ct, 1);
+    }
+
+    //fade out
+    sample.gainNode.gain.setValueCurveAtTime(sample.crossfades.xOut, ct + sample.buffer.duration - 1, 1);
 
     //sched start & stops
     sample.bufSrc.start(this.context.currentTime);
@@ -133,21 +139,24 @@ aapiWrapper.prototype.loopPlay = function(sample){
 
 // /*-----------------------------HELPER FUNCTIONS------------------------------*/
 
-aapiWrapper.prototype.calcXFades = function(){
+aapiWrapper.prototype.calcXFades = function(amp){
   
     var valueCount = 4096;
+    var crossfades = {};
 
     //fade in
-    audio.crossfades.xIn = new Float32Array(valueCount);
+    crossfades.xIn = new Float32Array(valueCount);
     for (var i = 0; i < valueCount; i++) { 
-      audio.crossfades.xIn[i] = 1 - Math.pow(((valueCount-i)/valueCount),2);
+      crossfades.xIn[i] = (1 - Math.pow(((valueCount-i)/valueCount),2)) * amp;
     }
 
     //reverse for fade out
-    audio.crossfades.xOut = new Float32Array(valueCount);
+    crossfades.xOut = new Float32Array(valueCount);
     for (var i = 0; i < valueCount; i++) { 
-      audio.crossfades.xOut[i] = 1 - Math.pow(((i+1)/valueCount),2);
+      crossfades.xOut[i] = (1 - Math.pow(((i+1)/valueCount),2) ) * amp;
     }
+
+    return crossfades;
 
 }
 
@@ -164,6 +173,7 @@ function appiSample(fileName){
   this.loopThread;
   this.isPlaying = false;
   this.amp;
+  this.crossfades = {};
   
 }
 

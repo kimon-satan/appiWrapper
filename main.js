@@ -54,7 +54,7 @@ function beginAudio(){
   var buttonEvent = function(){
 
     if(!isPressed){
-      audio.startLooping(0);    
+      audio.startLooping(0, 0.5, 3);    
     }else{
       audio.stopLooping(0);
     }
