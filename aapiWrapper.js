@@ -17,10 +17,10 @@ aapiWrapper.prototype.init = function(){
     audio.context = new window.AudioContext();
     this.initialised = false;
 
-
     return true;
 
   } catch(e) {
+
     this.initialised = false;
     return false;
 
@@ -28,42 +28,38 @@ aapiWrapper.prototype.init = function(){
 
 }
 
-aapiWrapper.prototype.loadSounds = function(files){
-
-	var success = true;
+aapiWrapper.prototype.loadSounds = function(files, callBack){
 
 	for (var a in files) {
 		(function(parent) {
 
 			var i = parseInt(a);
-			parent.sampleObjs[i] = new appiSample();
+      
+      //get the file name
+      var name = files[i].split("/");
+      name = name[name.length-1].split(".");
+      name = name[0];
 
+			parent.sampleObjs[name] = new appiSample();
 
 			var req = new XMLHttpRequest();
 			req.open('GET', files[i], true);
 			req.responseType = 'arraybuffer';
 
-			req.onload = function() {
-				parent.context.decodeAudioData(
-					req.response,
+      req.addEventListener('load', function(event){
 
-					function(buffer){
-						parent.sampleObjs[i].buffer  = buffer;
-						parent.sampleObjs[i].bufSrc = {};
-					},
+          parent.sampleObjs[name].buffer = parent.context.createBuffer(req.response, false);
+          parent.sampleObjs[name].bufSrc = {};
+          if(i == files.length-1)callBack(true);
 
-					function(){ 
-						success = false;
-						console.log('Error decoding audio "' + files[i] + '".') 
-					}
-				);
-			};
+      }, true);
+
 			req.send();
 
 		})(this); 
 	}
 
-	return success;
+  
 
 }
 
@@ -78,6 +74,11 @@ aapiWrapper.prototype.playOnce = function(n, amp, offset, fadeIn, fadeOut){
   if(typeof fadeOut === 'undefined')fadeIn = 0.01;
 
   this.play(sample, fadeIn, fadeOut, offset);
+
+}
+
+aapiWrapper.prototype.playSequence = function(sampleNames){
+
 
 }
 

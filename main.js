@@ -1,5 +1,5 @@
 var audio;
-var files = ['sounds/lowWind_5.wav','sounds/footstep.mp3','sounds/howl.wav'];
+var files = ['sounds/footstep.mp3','sounds/lowWind_5.wav','sounds/howl.wav'];
 
 
 $('document').ready(function(){
@@ -7,6 +7,7 @@ $('document').ready(function(){
   $('#controls').hide();
 
   $.getScript("aapiWrapper.js", function(data, textStatus, jqxhr){
+
 
     console.log("appiWrapper.js :: " + textStatus);
 
@@ -27,13 +28,18 @@ $('document').ready(function(){
 });
 
 
+var testF = function(success){
+
+  //if(success)$('#controls').show();
+  $('#controls').show();
+
+}
 
 function beginAudio(){
 
 
-  if(audio.loadSounds(files)){ 
-    $('#controls').show();
-  };
+  if(audio.loadSounds(files, testF));
+   
 
 
   $('#loopingSound').on("click", function(e){
@@ -64,9 +70,9 @@ function beginAudio(){
     var checked = $('#loopingSound').prop('checked');
 
     if(checked){
-      audio.startLooping(0, 0.25, 3);    
+      audio.startLooping('lowWind_5', 0.25, 3);    
     }else{
-      audio.stopLooping(0, 3);
+      audio.stopLooping('lowWind_5', 3);
     }
 
   };
@@ -74,15 +80,15 @@ function beginAudio(){
   var s1Event = function(){
 
     console.log("1s");
-    audio.play(audio.sampleObjs[1],0.01,0.01);
+    audio.playOnce('footstep',0.5);
 
   }
 
   var s2Event = function(){
 
     console.log("2s");
-    audio.play(audio.sampleObjs[1],0.01,0.01);
-    audio.play(audio.sampleObjs[2],0.01,0.01,3);
+    audio.playOnce('footstep',0.9,0);
+    audio.playOnce('howl',0.25,3);
 
   }
 
