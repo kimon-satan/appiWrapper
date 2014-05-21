@@ -5,6 +5,7 @@ var files = ['sounds/footstep.mp3','sounds/lowWind_5.wav','sounds/howl.wav'];
 $('document').ready(function(){
 
   $('#controls').hide();
+    $('#splashStart').hide();
 
   $.getScript("aapiWrapper.js", function(data, textStatus, jqxhr){
 
@@ -15,7 +16,8 @@ $('document').ready(function(){
 
     if(audio.init()){
 
-        beginAudio();
+        $('#splashStart').show();
+        console.log("it works");
 
     }else{
 
@@ -28,9 +30,15 @@ $('document').ready(function(){
 });
 
 
+$('#begin').on("click", function(e){
+
+    beginAudio();
+
+});
+
 var testF = function(success){
 
-  //if(success)$('#controls').show();
+  $('#splashStart').hide();
   $('#controls').show();
 
 }
