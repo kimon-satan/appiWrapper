@@ -77,13 +77,26 @@ aapiWrapper.prototype.startLooping = function(n, amp, fadeIn){ //n might ultimat
 
     sample.isPlaying = true;
 
-    this.loopPlay(sample, fadeIn);
+    this.play(sample, fadeIn, -1);
+    sample.loopTime = this.context.currentTime + sample.buffer.duration - 1;
 
     sample.loopThread = window.setInterval(function(){
 
-      //console.log(audio.context.currentTime + " :: "  + audio.sampleObjs[n].loopTime);
+      //console.log(this.context.currentTime + " :: "  + sample.loopTime);
+
       if(this.context.currentTime > sample.loopTime){
-        this.loopPlay(sample, -1);
+
+        if(sample.fadeOut){
+          console.log("final play");
+          this.play(sample, -1, -1);
+          sample.gainNode.gain.value = sample.amp; //because loopStop takes the current gain.value
+          this.loopStop(sample, sample.fadeTime, 1);
+        }else{
+
+          //calc next loop point
+          this.play(sample, -1, -1);
+          sample.loopTime = this.context.currentTime + sample.buffer.duration - 1; //1 sec crossfades
+        }
       }
 
     }.bind(this),50);
@@ -95,16 +108,50 @@ aapiWrapper.prototype.startLooping = function(n, amp, fadeIn){ //n might ultimat
 aapiWrapper.prototype.stopLooping = function(n, fadeOut){
 
 	var sample = this.sampleObjs[n];
+  var ct = this.context.currentTime;
 
 	if(sample.isPlaying){
-    	sample.bufSrc.stop(0);
-    	sample.isPlaying = false;
-    	window.clearInterval(sample.loopThread);
-  	}
+      var t_remain = sample.loopTime - ct;
+
+      if(t_remain/(fadeOut-1) > 0.5){
+        
+        //do the fade out now
+        this.loopStop(sample, t_remain, 0);
+      
+      }else{
+
+        console.log("sched");
+
+        //this will schedule the fadeout on the next interval
+        sample.fadeOut = true;
+        sample.fadeTime = fadeOut - t_remain - 1;
+
+      }
+  }
+
+}
+
+aapiWrapper.prototype.loopStop = function(sample, fadeOut, offset){
+
+  var ct = this.context.currentTime;
+
+  console.log(sample.gainNode.gain.value);
+
+  sample.gainNode.gain.cancelScheduledValues(ct + offset); //clear the cross fade
+  sample.gainNode.gain.linearRampToValueAtTime(sample.gainNode.gain.value, ct + offset);
+  sample.gainNode.gain.linearRampToValueAtTime(0, ct + offset + fadeOut);
+
+  sample.bufSrc.stop(ct + fadeOut + offset);
+  sample.isPlaying = false;
+  sample.fadeOut = false;
+  sample.fadeTime = 0;
+
+  window.clearInterval(sample.loopThread);
+
 }
 
 
-aapiWrapper.prototype.loopPlay = function(sample, fadeIn){
+aapiWrapper.prototype.play = function(sample, fadeIn, fadeOut){
 
     var ct = this.context.currentTime;
 
@@ -117,9 +164,6 @@ aapiWrapper.prototype.loopPlay = function(sample, fadeIn){
     sample.bufSrc .connect(sample.gainNode);
     sample.gainNode.connect(this.context.destination);
 
-    //calc next loop point
-    sample.loopTime = ct + sample.buffer.duration - 1;
-
     //handle fades
     if(fadeIn > 0){
       sample.gainNode.gain.linearRampToValueAtTime(0, ct);
@@ -129,11 +173,16 @@ aapiWrapper.prototype.loopPlay = function(sample, fadeIn){
     }
 
     //fade out
-    sample.gainNode.gain.setValueCurveAtTime(sample.crossfades.xOut, ct + sample.buffer.duration - 1, 1);
+    if(fadeOut > 0){
+      sample.gainNode.gain.linearRampToValueAtTime(sample.amp, ct + sample.buffer.duration - fadeOut);
+      sample.gainNode.gain.linearRampToValueAtTime(0, ct + sample.buffer.duration);
+    }else{
+      sample.gainNode.gain.setValueCurveAtTime(sample.crossfades.xOut, ct + sample.buffer.duration - 1, 1);
+    }
 
     //sched start & stops
-    sample.bufSrc.start(this.context.currentTime);
-    sample.bufSrc.stop(sample.loopTime + 1);
+    sample.bufSrc.start(ct);
+    sample.bufSrc.stop(ct + sample.buffer.duration);
 
 }
 
@@ -171,6 +220,8 @@ function appiSample(fileName){
   this.fileName = fileName;
   this.loopTime;
   this.loopThread;
+  this.fadeOut = false;
+  this.fadeTime = 0;
   this.isPlaying = false;
   this.amp;
   this.crossfades = {};
