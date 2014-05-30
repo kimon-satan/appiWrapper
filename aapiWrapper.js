@@ -40,7 +40,7 @@ aapiWrapper.prototype.loadSounds = function(files, callBack){
       name = name[name.length-1].split(".");
       name = name[0];
 
-			parent.sampleObjs[name] = new appiSample();
+			parent.sampleObjs[name] = new appiSample(name);
 
 			var req = new XMLHttpRequest();
 			req.open('GET', files[i], true);
@@ -63,17 +63,38 @@ aapiWrapper.prototype.loadSounds = function(files, callBack){
 
 }
 
-aapiWrapper.prototype.playOnce = function(n, amp, offset, fadeIn, fadeOut){
+aapiWrapper.prototype.playOnce = function(n, options, callBack){
 
   var sample = this.sampleObjs[n];
 
   //defaults
-  if(typeof amp !== 'undefined')sample.amp = amp;
-  if(typeof offset === 'undefined')offset = 0;
-  if(typeof fadeIn === 'undefined')fadeIn = 0.01;
-  if(typeof fadeOut === 'undefined')fadeIn = 0.01;
+  if(typeof options.amp !== 'undefined')sample.amp = options.amp;
+  if(typeof options.offset === 'undefined')options.offset = 0;
+  if(typeof options.fadeIn === 'undefined')options.fadeIn = 0.01;
+  if(typeof options.fadeOut === 'undefined')options.fadeIn = 0.01;
 
-  this.play(sample, fadeIn, fadeOut, offset);
+
+  this.play(sample, options.fadeIn, options.fadeOut, options.offset);
+
+  if(typeof callBack === 'function'){
+
+     sample.cbTime = this.context.currentTime + options.offset + sample.buffer.duration;
+
+     sample.cbThread = window.setInterval(function(){
+
+     // console.log(this.context.currentTime);
+
+      if(this.context.currentTime > sample.cbTime){
+
+        window.clearInterval(sample.cbThread);
+        callBack();
+
+      }
+
+    }.bind(this),50);
+
+
+  }
 
 }
 
@@ -82,11 +103,11 @@ aapiWrapper.prototype.playSequence = function(sampleNames){
 
 }
 
-aapiWrapper.prototype.startLooping = function(n, amp, fadeIn){ //n might ultimately be a key
+aapiWrapper.prototype.startLooping = function(n, amp, fadeIn){ //n is a key with the fileName
 
   var sample = this.sampleObjs[n];
   sample.amp = amp;
-  sample.crossfades = this.calcXFades(amp);
+  sample.crossfades = this.calcXFades(1);
 
   if(!sample.isLooping){
 
@@ -97,20 +118,11 @@ aapiWrapper.prototype.startLooping = function(n, amp, fadeIn){ //n might ultimat
 
     sample.loopThread = window.setInterval(function(){
 
-      //console.log(this.context.currentTime + " :: "  + sample.loopTime);
-
       if(this.context.currentTime > sample.loopTime){
 
-        if(sample.fadeOut){
-          this.play(sample, -1, -1);
-          sample.gainNode.gain.value = sample.amp; //because loopStop takes the current gain.value
-          this.loopStop(sample, sample.fadeTime, 1);
-        }else{
-
-          //calc next loop point
           this.play(sample, -1, -1);
           sample.loopTime = this.context.currentTime + sample.buffer.duration - 1; //1 sec crossfades
-        }
+
       }
 
     }.bind(this),50);
@@ -119,48 +131,39 @@ aapiWrapper.prototype.startLooping = function(n, amp, fadeIn){ //n might ultimat
 
 }
 
-aapiWrapper.prototype.stopLooping = function(n, fadeOut){
+aapiWrapper.prototype.stopLooping = function(n, fadeOut, offset){
 
 	var sample = this.sampleObjs[n];
   var ct = this.context.currentTime;
 
 	if(sample.isLooping){
-      var t_remain = sample.loopTime - ct;
 
-      if(t_remain/(fadeOut-1) > 0.5){
-        
-        //do the fade out now
-        this.loopStop(sample, t_remain, 0);
-      
-      }else{
+    if(typeof offset === 'undefined')offset = 0;
 
-        //this will schedule the fadeout on the next interval
-        sample.fadeOut = true;
-        sample.fadeTime = fadeOut - t_remain - 1;
+    sample.gainNode.gain.cancelScheduledValues(ct + offset); //clear the cross fade
+    sample.gainNode.gain.linearRampToValueAtTime(sample.gainNode.gain.value, ct + offset);
+    sample.gainNode.gain.linearRampToValueAtTime(0, ct + offset + fadeOut);
 
+ 
+    sample.stopLoopThread = window.setInterval(function(){
+
+      if(this.context.currentTime >= ct + offset + fadeOut + 0.5){
+          window.clearInterval(sample.loopThread);
+          window.clearInterval(sample.stopLoopThread);
+          sample.bufSrc.stop(0);
+          sample.isLooping = false;
+          sample.fadeOut = false;
+          sample.fadeTime = 0;
       }
+
+    }.bind(this),50);
+
+
   }
 
 }
 
-aapiWrapper.prototype.loopStop = function(sample, fadeOut, offset){
 
-  var ct = this.context.currentTime;
-
-  //console.log(sample.gainNode.gain.value);
-
-  sample.gainNode.gain.cancelScheduledValues(ct + offset); //clear the cross fade
-  sample.gainNode.gain.linearRampToValueAtTime(sample.gainNode.gain.value, ct + offset);
-  sample.gainNode.gain.linearRampToValueAtTime(0, ct + offset + fadeOut);
-
-  sample.bufSrc.stop(ct + fadeOut + offset);
-  sample.isLooping = false;
-  sample.fadeOut = false;
-  sample.fadeTime = 0;
-
-  window.clearInterval(sample.loopThread);
-
-}
 
 
 aapiWrapper.prototype.play = function(sample, fadeIn, fadeOut, offset){
@@ -172,9 +175,12 @@ aapiWrapper.prototype.play = function(sample, fadeIn, fadeOut, offset){
     sample.bufSrc = this.context.createBufferSource();
     sample.bufSrc.buffer = sample.buffer;
     sample.gainNode = this.context.createGain();
+    sample.crossFadeNode = this.context.createGain();
 
     //patch nodes
-    sample.bufSrc .connect(sample.gainNode);
+
+    sample.bufSrc .connect(sample.crossFadeNode);
+    sample.crossFadeNode.connect(sample.gainNode);
     sample.gainNode.connect(this.context.destination);
 
     //handle fades
@@ -182,7 +188,7 @@ aapiWrapper.prototype.play = function(sample, fadeIn, fadeOut, offset){
       sample.gainNode.gain.linearRampToValueAtTime(0, ct);
       sample.gainNode.gain.linearRampToValueAtTime(sample.amp, ct + fadeIn);
     }else{
-      sample.gainNode.gain.setValueCurveAtTime(sample.crossfades.xIn, ct, 1);
+      sample.crossFadeNode.gain.setValueCurveAtTime(sample.crossfades.xIn, ct, 1);
     }
 
     //fade out
@@ -190,7 +196,7 @@ aapiWrapper.prototype.play = function(sample, fadeIn, fadeOut, offset){
       sample.gainNode.gain.linearRampToValueAtTime(sample.amp, ct + sample.buffer.duration - fadeOut);
       sample.gainNode.gain.linearRampToValueAtTime(0, ct + sample.buffer.duration);
     }else{
-      sample.gainNode.gain.setValueCurveAtTime(sample.crossfades.xOut, ct + sample.buffer.duration - 1, 1);
+      sample.crossFadeNode.gain.setValueCurveAtTime(sample.crossfades.xOut, ct + sample.buffer.duration - 1, 1);
     }
 
     //sched start & stops
@@ -229,10 +235,14 @@ function appiSample(fileName){
 
   this.buffer;
   this.bufSrc;
+  this.crossFadeNode;
   this.gainNode;
   this.fileName = fileName;
   this.loopTime;
   this.loopThread;
+  this.cbTime;
+  this.cbThread;
+  this.stopLoopThread;
   this.fadeOut = false;
   this.fadeTime = 0;
   this.isLooping = false;
